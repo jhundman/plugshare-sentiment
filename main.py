@@ -1,19 +1,35 @@
-# import pandas as pd
-# import requests
-# from dotenv import load_dotenv
-# import os
-# import json
 import modal
+import os
+from dotenv import dotenv_values
 
-stub = modal.Stub("example-get-started")
+# Assuming modal.Image and modal.Stub work as expected with env vars
+image = modal.Image.debian_slim().pip_install("python-dotenv")
+stub = modal.Stub("plugshare-sentiment", image=image)
+stub.envs = modal.Dict.new()
 
 
 @stub.function()
-def square(x):
-    print("This code is running on a remote worker!")
-    return x**2
+def process_chargers():
+    print("Starting to Process Chargers")
+    # Function implementation
+    return None
+
+
+@stub.function()
+def process_reviews():
+    print("Starting to Process Reviews")
+    # Function implementation
+    return None
+
+
+@stub.function(schedule=modal.Period(days=7))
+def plugshare_sentiment():
+    process_chargers.remote()
+    process_reviews.remote()
+    return None
 
 
 @stub.local_entrypoint()
 def main():
-    print("the square is", square.remote(42))
+    plugshare_sentiment.remote()
+    print("done")
