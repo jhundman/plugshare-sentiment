@@ -4,7 +4,7 @@ from .reviews import process_reviews
 import modal
 
 
-@stub.function(schedule=modal.Period(days=7))
+@stub.function(schedule=modal.Period(days=1), timeout=4200)
 def plugshare_sentiment():
     print("==== Starting to Process Chargers =====")
     process_chargers.remote()

@@ -5,12 +5,13 @@ import pandas as pd
 from datetime import datetime
 import json
 import time
+import random
 from .common import stub
 
 
-NUM_CHARGERS = 25000
-CITIES_SAMPLE = 2
-PS_SLEEP = 1
+NUM_CHARGERS = 5000
+CITIES_SAMPLE = 100
+PS_SLEEP = 1.5
 API_COUNT = 500
 NETWORK_NAMES = {8: "Tesla", 19: "EVgo", 47: "Electrify_America", 1: "ChargePoint"}
 TB_URL_CITIES = "https://api.us-east.tinybird.co/v0/pipes/plugshare_cities_select.json"
@@ -40,6 +41,7 @@ HEADERS = {
     secrets=[
         modal.Secret.from_name("TINYBIRD_KEY"),
     ],
+    timeout=600
 )
 def process_chargers():
     # Define Variables
@@ -59,14 +61,14 @@ def process_chargers():
                 "access": 1,
                 "count": API_COUNT,
                 "exclude_poi_names": "dealership",
-                "latitude": city["latitude"],
-                "longitude": city["longitude"],
+                "latitude": city["latitude"] + (random.random() * 4 - 2),
+                "longitude": city["longitude"] + (random.random() * 4 - 2),
                 "minimal": 0,
                 "minimum_power": 149,
                 "networks": "1,47,19,8",
                 "outlets": '[{"connector":6,"power":1},{"connector":13,"power":0},{"connector":6,"power":0}]',
-                "spanLat": 2.5,
-                "spanLng": 2.5,
+                "spanLat": 5,
+                "spanLng": 5,
             }
 
             # Headers for the GET request
@@ -78,74 +80,72 @@ def process_chargers():
         return None
 
     def process_charger(charger):
-        network_id = (
-            charger["stations"][0]["network_id"] if charger.get("stations") else None
-        )
+        network_id = 999
+        if charger.get("stations") and len(charger["stations"]) > 0:
+            network_id = charger["stations"][0].get("network_id")
+
+        # Construct kilowatts list, filtering out None values
         kilowatts = [
-            outlet["kilowatts"]
-            for station in charger["stations"]
-            for outlet in station["outlets"]
+            outlet.get("kilowatts")
+            for station in charger.get("stations", [])
+            for outlet in station.get("outlets", [])
+            if outlet.get("kilowatts") is not None
         ]
 
+        # Return the processed data with defaulting to 0 for min_kw and max_kw if no valid kilowatt values
         return {
             "charger_id": charger["id"],
             "address": charger.get("address", "No address provided"),
             "network_id": network_id,
             "network_name": NETWORK_NAMES.get(network_id, "Unknown"),
-            "min_kw": min(kilowatts) if kilowatts else None,
-            "max_kw": max(kilowatts) if kilowatts else None,
-            "count_stations": len(charger["stations"]),
+            "min_kw": min(kilowatts) if kilowatts else 0,
+            "max_kw": max(kilowatts) if kilowatts else 0,
+            "count_stations": len(charger.get("stations", [])),
             "lat": charger.get("latitude"),
             "long": charger.get("longitude"),
         }
 
-    def insert_chargers(chargers, table_name):
-        # Add a new column for the current UTC time
-        chargers.loc[:, "inserted_at"] = datetime.utcnow().isoformat()
-        events_dict_list = chargers.to_dict("records")
-        data = "\n".join([json.dumps(event) for event in events_dict_list])
+    def insert_chargers(chargers, table_name, chargers_df):
+        processed_chargers_df = pd.DataFrame(
+            [process_charger(charger) for charger in chargers]
+        )
 
-        params = {
-            "name": table_name,
-            "token": TINYBIRD_KEY,
-        }
+        if not chargers_df.empty:
+            processed_chargers_df = processed_chargers_df[
+                ~processed_chargers_df["charger_id"].isin(chargers_df["charger_id"])
+            ]
 
-        r = requests.post(
+        # Early exit if there are no chargers to add
+        if processed_chargers_df.empty:
+            print("No chargers to add")
+            return
+        print("Num chargers to add", len(processed_chargers_df))
+
+        processed_chargers_df["inserted_at"] = datetime.utcnow().isoformat()
+
+        data = "\n".join(
+            json.dumps(event) for event in processed_chargers_df.to_dict("records")
+        )
+
+        params = {"name": table_name, "token": TINYBIRD_KEY}
+        response = requests.post(
             "https://api.us-east.tinybird.co/v0/events", params=params, data=data
         )
 
-        print(r.status_code)
-        print(r.text)
+        print(response.text)
 
     ### Run Logic
     def main():
         cities_df = get_tb_data(TB_URL_CITIES).sample(CITIES_SAMPLE)
-        chargers_df = get_tb_data(TB_URL_CHARGERS)
 
-        if chargers_df.size > NUM_CHARGERS:
-            return f"At charger sample limit, num chargers: {chargers_df.size}"
-
-        chargers = []
         for index, row in cities_df.iterrows():
+            chargers_df = get_tb_data(TB_URL_CHARGERS)
+            if chargers_df.size > NUM_CHARGERS:
+                return f"At charger sample limit, num chargers: {chargers_df.size}"
+
             results = get_ps_chargers(row)
             if results is not None:
-                chargers.extend(results)
-
-        processed_chargers = [process_charger(charger) for charger in chargers]
-        processed_chargers_df = pd.DataFrame(processed_chargers)
-        if len(chargers_df) > 0:
-            processed_chargers_filtered = processed_chargers_df[
-                ~processed_chargers_df["charger_id"].isin(chargers_df["charger_id"])
-            ]
-        else:
-            processed_chargers_filtered = processed_chargers_df
-
-        if len(processed_chargers_filtered) > 0:
-            print("Num chargers to add", len(processed_chargers_filtered))
-        else:
-            print("No chargers to add")
-            return
-
-        insert_chargers(processed_chargers_filtered, "plugshare_chargers")
+                insert_chargers(results, "plugshare_chargers", chargers_df)
+        return
 
     return main()

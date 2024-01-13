@@ -8,8 +8,8 @@ import json
 import time
 from openai import OpenAI
 
-MAX_NUM_REVIEWS = 1
-MAX_CHARGER_SAMPLE_SIZE = 2
+MAX_NUM_REVIEWS = 2000
+MAX_CHARGER_SAMPLE_SIZE = 1500
 PS_SLEEP = 1
 HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -34,6 +34,7 @@ HEADERS = {
         modal.Secret.from_name("TINYBIRD_KEY"),
         modal.Secret.from_name("OPENAI_KEY"),
     ],
+    timeout=3600,
 )
 def process_reviews():
     start_time = time.time()
@@ -51,7 +52,9 @@ def process_reviews():
             processed_review = {
                 "review_id": review.get("id"),
                 "charger_id": charger_data.get("id"),
-                "lang": review.get("language", "eng"),
+                "lang": review.get("language")
+                if review.get("language") is not None
+                else "eng",
                 "created_at": review.get("created_at"),
                 "peak_kw": review.get("kilowatts")
                 if review.get("kilowatts") is not None
@@ -175,10 +178,6 @@ def process_reviews():
             "https://api.us-east.tinybird.co/v0/pipes/plugshare_distinct_reviews.json"
         )
 
-        if "review_id" in reviews_df.columns:
-            ids_to_remove = set(reviews_df["review_id"])
-        else:
-            ids_to_remove = set()
         sample_size = min(len(chargers_df), MAX_CHARGER_SAMPLE_SIZE)
         chargers_df = chargers_df.sample(n=sample_size)
 
@@ -187,6 +186,13 @@ def process_reviews():
         reviews_processed = 0
         for index, row in chargers_df.iterrows():
             processed_review_data = get_charger_data(row["charger_id"])
+            reviews_df = get_tb_data(
+                "https://api.us-east.tinybird.co/v0/pipes/plugshare_distinct_reviews.json"
+            )
+            if "review_id" in reviews_df.columns:
+                ids_to_remove = set(reviews_df["review_id"])
+            else:
+                ids_to_remove = set()
             filtered_data = [
                 d
                 for d in processed_review_data
