@@ -6,11 +6,12 @@ import modal
 
 @stub.function(schedule=modal.Period(days=7))
 def plugshare_sentiment():
-    print("Starting Script")
     print("==== Starting to Process Chargers =====")
     process_chargers.remote()
+
     print("==== Starting to Process Reviews =====")
     process_reviews.remote()
+
     return None
 
 

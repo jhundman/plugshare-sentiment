@@ -9,21 +9,41 @@ from .common import stub
 
 
 NUM_CHARGERS = 25000
-PS_SLEEP = 1
-NETWORK_NAMES = {8: "Tesla", 19: "EVgo", 47: "Electrify_America", 1: "ChargePoint"}
 CITIES_SAMPLE = 2
+PS_SLEEP = 1
+API_COUNT = 500
+NETWORK_NAMES = {8: "Tesla", 19: "EVgo", 47: "Electrify_America", 1: "ChargePoint"}
+TB_URL_CITIES = "https://api.us-east.tinybird.co/v0/pipes/plugshare_cities_select.json"
+TB_URL_CHARGERS = (
+    "https://api.us-east.tinybird.co/v0/pipes/plugshare_distinct_chargers.json"
+)
+
+HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Language": "en",
+    "Authorization": "Basic d2ViX3YyOkVOanNuUE54NHhXeHVkODU=",
+    "Dnt": "1",
+    "Origin": "https://www.plugshare.com",
+    "Referer": "https://www.plugshare.com/",
+    "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"macOS"',
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-site",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+}
 
 
 @stub.function(
     secrets=[
         modal.Secret.from_name("TINYBIRD_KEY"),
-        modal.Secret.from_name("PLUGSHARE_BASIC_KEY"),
     ],
 )
 def process_chargers():
     # Define Variables
     TINYBIRD_KEY = os.environ["TINYBIRD_KEY"]
-    PLUGSHARE_BASIC_KEY = os.environ["PLUGSHARE_BASIC_KEY"]
 
     # Define functions
     def get_tb_data(url):
@@ -37,7 +57,7 @@ def process_chargers():
             url = "https://api.plugshare.com/v3/locations/region"
             params = {
                 "access": 1,
-                "count": 500,
+                "count": API_COUNT,
                 "exclude_poi_names": "dealership",
                 "latitude": city["latitude"],
                 "longitude": city["longitude"],
@@ -50,24 +70,8 @@ def process_chargers():
             }
 
             # Headers for the GET request
-            headers = {
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Accept-Language": "en",
-                "Authorization": f"Basic {PLUGSHARE_BASIC_KEY}",
-                "Dnt": "1",
-                "Origin": "https://www.plugshare.com",
-                "Referer": "https://www.plugshare.com/",
-                "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120"',
-                "Sec-Ch-Ua-Mobile": "?0",
-                "Sec-Ch-Ua-Platform": '"macOS"',
-                "Sec-Fetch-Dest": "empty",
-                "Sec-Fetch-Mode": "cors",
-                "Sec-Fetch-Site": "same-site",
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            }
 
-            response = requests.get(url, params=params, headers=headers)
+            response = requests.get(url, params=params, headers=HEADERS)
             return response.json()
         except Exception as e:
             print(f"Error occurred: {e}")
@@ -97,7 +101,7 @@ def process_chargers():
 
     def insert_chargers(chargers, table_name):
         # Add a new column for the current UTC time
-        chargers["inserted_at"] = datetime.utcnow().isoformat()
+        chargers.loc[:, "inserted_at"] = datetime.utcnow().isoformat()
         events_dict_list = chargers.to_dict("records")
         data = "\n".join([json.dumps(event) for event in events_dict_list])
 
@@ -115,17 +119,11 @@ def process_chargers():
 
     ### Run Logic
     def main():
-        cities_df = get_tb_data(
-            "https://api.us-east.tinybird.co/v0/pipes/plugshare_cities_select.json"
-        ).sample(CITIES_SAMPLE)
-
-        chargers_df = get_tb_data(
-            "https://api.us-east.tinybird.co/v0/pipes/plugshare_distinct_chargers.json"
-        )
+        cities_df = get_tb_data(TB_URL_CITIES).sample(CITIES_SAMPLE)
+        chargers_df = get_tb_data(TB_URL_CHARGERS)
 
         if chargers_df.size > NUM_CHARGERS:
-            print(f"At charger sample limit, num chargers: {chargers_df.size}")
-            return
+            return f"At charger sample limit, num chargers: {chargers_df.size}"
 
         chargers = []
         for index, row in cities_df.iterrows():
@@ -134,13 +132,13 @@ def process_chargers():
                 chargers.extend(results)
 
         processed_chargers = [process_charger(charger) for charger in chargers]
-        processed_chargers = pd.DataFrame(processed_chargers)
+        processed_chargers_df = pd.DataFrame(processed_chargers)
         if len(chargers_df) > 0:
-            processed_chargers_filtered = processed_chargers[
-                ~processed_chargers["charger_id"].isin(chargers_df["charger_id"])
+            processed_chargers_filtered = processed_chargers_df[
+                ~processed_chargers_df["charger_id"].isin(chargers_df["charger_id"])
             ]
         else:
-            processed_chargers_filtered = processed_chargers
+            processed_chargers_filtered = processed_chargers_df
 
         if len(processed_chargers_filtered) > 0:
             print("Num chargers to add", len(processed_chargers_filtered))

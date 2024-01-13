@@ -8,37 +8,37 @@ import json
 import time
 from openai import OpenAI
 
+MAX_NUM_REVIEWS = 1
+MAX_CHARGER_SAMPLE_SIZE = 2
+PS_SLEEP = 1
+HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Language": "en",
+    "Authorization": "Basic d2ViX3YyOkVOanNuUE54NHhXeHVkODU=",
+    "Dnt": "1",
+    "Origin": "https://www.plugshare.com",
+    "Referer": "https://www.plugshare.com/",
+    "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"macOS"',
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-site",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+}
+
 
 @stub.function(
     secrets=[
         modal.Secret.from_name("TINYBIRD_KEY"),
-        modal.Secret.from_name("PLUGSHARE_BASIC_KEY"),
         modal.Secret.from_name("OPENAI_KEY"),
     ],
 )
 def process_reviews():
     start_time = time.time()
-
     TINYBIRD_KEY = os.environ["TINYBIRD_KEY"]
-    PLUGSHARE_BASIC_KEY = os.environ["PLUGSHARE_BASIC_KEY"]
     OPENAI_KEY = os.environ["OPENAI_KEY"]
-
-    headers = {
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "en",
-        "Authorization": f"Basic {PLUGSHARE_BASIC_KEY}",
-        "Dnt": "1",
-        "Origin": "https://www.plugshare.com",
-        "Referer": "https://www.plugshare.com/",
-        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"macOS"',
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-site",
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    }
 
     # Define Functions
     def get_tb_data(url):
@@ -47,37 +47,26 @@ def process_reviews():
 
     def process_reviews(charger_data):
         reviews = []
-        for review in charger_data.get("reviews"):
+        for review in charger_data.get("reviews", []):
             processed_review = {
                 "review_id": review.get("id"),
                 "charger_id": charger_data.get("id"),
-                "lang": "eng",
-                "created_at": None,
-                "peak_kw": 0,
-                "comment": None,
-                "had_problem": 0,
-                "problem_description": "",
+                "lang": review.get("language", "eng"),
+                "created_at": review.get("created_at"),
+                "peak_kw": review.get("kilowatts")
+                if review.get("kilowatts") is not None
+                else 0,
+                "comment": review.get("comment", "").strip()[:300]
+                if review.get("comment")
+                else None,
+                "had_problem": review.get("problem", 0),
+                "problem_description": review.get("problem_description", "")[:300],
             }
 
-            if (review.get("spam_category") is None) and (
-                review.get("comment") is not None
-            ):
-                processed_review.update(
-                    {
-                        "lang": review.get("language")
-                        if review.get("language") is not None
-                        else "eng",
-                        "created_at": review.get("created_at"),
-                        "peak_kw": review.get("kilowatts")
-                        if review.get("kilowatts") is not None
-                        else 0,
-                        "comment": review.get("comment").strip()[:300],
-                        "had_problem": review.get("problem", 0),
-                        "problem_description": review.get("problem_description", "")[
-                            :300
-                        ],
-                    }
-                )
+            if review.get("spam_category") is not None:
+                processed_review["comment"] = None
+                processed_review["problem_description"] = ""
+
             reviews.append(processed_review)
         return reviews
 
@@ -150,10 +139,9 @@ def process_reviews():
         return {**review, **response}
 
     def get_charger_data(charger_id):
-        time.sleep(1)
+        time.sleep(PS_SLEEP)
         url = "https://api.plugshare.com/v3/locations/" + str(charger_id)
-        response = requests.get(url, headers=headers)
-
+        response = requests.get(url, headers=HEADERS)
         return process_reviews(response.json())
 
     def process_review_data(reviews):
@@ -162,7 +150,6 @@ def process_reviews():
         return [element for element in gpt_reviews if element is not None]
 
     def insert_reviews(reviews, table_name):
-        # Add a new column for the current UTC time
         for ev in reviews:
             ev["inserted_at"] = datetime.utcnow().isoformat()
         data = "\n".join([json.dumps(ev) for ev in reviews])
@@ -176,8 +163,7 @@ def process_reviews():
             "https://api.us-east.tinybird.co/v0/events", params=params, data=data
         )
 
-        print(r.status_code)
-        print(r.text)
+        print("TINYBIRD", r.text)
         return
 
     ### Run Logic
@@ -188,19 +174,17 @@ def process_reviews():
         reviews_df = get_tb_data(
             "https://api.us-east.tinybird.co/v0/pipes/plugshare_distinct_reviews.json"
         )
-        print(reviews_df.head())
+
         if "review_id" in reviews_df.columns:
             ids_to_remove = set(reviews_df["review_id"])
         else:
             ids_to_remove = set()
-        sample_size = min(len(chargers_df), 2)
+        sample_size = min(len(chargers_df), MAX_CHARGER_SAMPLE_SIZE)
         chargers_df = chargers_df.sample(n=sample_size)
 
         print("Num Chargers", len(chargers_df))
-        print(chargers_df.head())
 
         reviews_processed = 0
-
         for index, row in chargers_df.iterrows():
             processed_review_data = get_charger_data(row["charger_id"])
             filtered_data = [
@@ -212,14 +196,14 @@ def process_reviews():
             ]
 
             data_to_save = process_review_data(filtered_data)
-            print("Data to save ", len(data_to_save))
-            print(data_to_save)
             insert_reviews(data_to_save, "plugshare_reviews")
-            print("Reviews Processed ", len(filtered_data))
             reviews_processed += len(filtered_data)
 
-            if reviews_processed >= 1:
-                print("Processed limit reached, stopping...")
+            if reviews_processed >= MAX_NUM_REVIEWS:
+                print(
+                    "Limit reached, stopping... Num Processed: ",
+                    reviews_processed,
+                )
                 break
 
         end_time = time.time()
