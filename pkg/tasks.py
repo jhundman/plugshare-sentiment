@@ -1,0 +1,21 @@
+from .common import stub
+from .chargers import process_chargers
+from .reviews import process_reviews
+import modal
+
+
+@stub.function(schedule=modal.Period(days=7))
+def plugshare_sentiment():
+    print("Starting Script")
+    print("==== Starting to Process Chargers =====")
+    process_chargers.remote()
+    print("==== Starting to Process Reviews =====")
+    process_reviews.remote()
+    return None
+
+
+@stub.local_entrypoint()
+def main():
+    plugshare_sentiment.remote()
+    print("Script Complete")
+    return
