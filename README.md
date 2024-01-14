@@ -14,4 +14,4 @@ This repo has the following files and structure
 - **test.ipynb**: Scratch file for testing (it's a little messy lol)
 
 ## Installation
-If anyone wants to install this to conduct their own analysis the main requirements are found in requirements.txt. I also utilized [Modal](modal.com) and [Tinybird](tinybird.co) and any code using those two platforms would require you to set those up too. 
+If anyone wants to install this to conduct their own analysis the main requirements are found in requirements.txt. I also utilized [Modal](https://modal.com/) and [Tinybird](https://www.tinybird.co/) and any code using those two platforms would require you to set those up too. 
