@@ -8,6 +8,10 @@ import time
 import random
 from .common import stub
 
+"""
+Script which collects chargers by looking at sample top 1000 US cities lat long (randomly jittered), and recording their data in Tinybird
+"""
+
 
 NUM_CHARGERS = 5000
 CITIES_SAMPLE = 25

@@ -8,8 +8,12 @@ import json
 import time
 from openai import OpenAI
 
+"""
+Script for sampling chargers, getting reviews for those chargers, processing them for sentiment analysis and finally saving the data in Tinybird
+"""
+
 MAX_NUM_REVIEWS = 1000
-MAX_CHARGER_SAMPLE_SIZE = 1500
+MAX_CHARGER_SAMPLE_SIZE = 150
 PS_SLEEP = 1
 HEADERS = {
     "Accept": "application/json, text/plain, */*",

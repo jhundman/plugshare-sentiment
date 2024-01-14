@@ -3,6 +3,10 @@ from .chargers import process_chargers
 from .reviews import process_reviews
 import modal
 
+"""
+Modal function which acts as orchestrator
+"""
+
 
 @stub.function(schedule=modal.Period(days=7), timeout=2700)
 def plugshare_sentiment():
