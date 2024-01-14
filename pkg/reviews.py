@@ -8,7 +8,7 @@ import json
 import time
 from openai import OpenAI
 
-MAX_NUM_REVIEWS = 2000
+MAX_NUM_REVIEWS = 1000
 MAX_CHARGER_SAMPLE_SIZE = 1500
 PS_SLEEP = 1
 HEADERS = {
@@ -34,7 +34,7 @@ HEADERS = {
         modal.Secret.from_name("TINYBIRD_KEY"),
         modal.Secret.from_name("OPENAI_KEY"),
     ],
-    timeout=3600,
+    timeout=2700,
 )
 def process_reviews():
     start_time = time.time()

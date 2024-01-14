@@ -10,7 +10,7 @@ from .common import stub
 
 
 NUM_CHARGERS = 5000
-CITIES_SAMPLE = 100
+CITIES_SAMPLE = 25
 PS_SLEEP = 1.5
 API_COUNT = 500
 NETWORK_NAMES = {8: "Tesla", 19: "EVgo", 47: "Electrify_America", 1: "ChargePoint"}
