@@ -1,5 +1,7 @@
 # Plugshare Sentiment Analysis of Checkin Comments
 
+Check out this [dashboard](hayeshundman.io/projects/plugshare-sentiment) and this [blog post](hayeshundman.io/blog/state-of-charging) the repo powers!
+
 ## Introduction
 This repo contains the code used in scraping, processing, and storing data from Plugshare Checkin Comments in order to do sentiment analysis of those comments. The goal is to track and analyze the current state of charging by the top electric vehicle DC fast chargers in the US. Sentiment analysis is accomplished through OpenAI's GPT 3 model to rate each comment in one of three categories.
 
